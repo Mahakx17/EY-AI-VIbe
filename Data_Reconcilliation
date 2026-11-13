@@ -1,0 +1,79 @@
+USE P07_ArthSutra
+GO
+
+--row count
+SELECT 'Benchmarks' AS TableName, COUNT(*) AS TotalRows
+FROM dbo.Benchmarks
+UNION ALL
+SELECT 'Holdings' AS TableName, COUNT(*) AS TotalRows
+FROM dbo.Holdings
+UNION ALL
+SELECT 'Portfolios' AS TableName, COUNT(*) AS TotalRows
+FROM dbo.Portfolios
+UNION ALL
+SELECT 'Securities' AS TableName, COUNT(*) AS TotalRows
+FROM dbo.Securities
+
+--Checking data types of each column in the tables
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_NAME IN ('Benchmarks', 'Holdings', 'Portfolios', 'Securities')
+ORDER BY TABLE_NAME, COLUMN_NAME;
+
+--Check distinct keys like unique portfolio, securities etc
+SELECT COUNT(DISTINCT PortfolioID) AS UniquePortfolios, COUNT(DISTINCT SecurityID) AS UniqueSecurities, COUNT(DISTINCT Month) AS UniqueMonths
+FROM Holdings;
+
+--Distinct column combination in Holdings table to check for duplicates (Expect no duplicates)
+SELECT PortfolioID, SecurityID, Month, COUNT(*) AS DuplicateCount
+FROM Holdings
+GROUP BY PortfolioID, SecurityID, Month
+HAVING COUNT(*) > 1;
+
+--total distinct combination of portfolio, security and month in Holdings table
+SELECT PortfolioID, SecurityID, Month, COUNT(*) AS DuplicateCount
+FROM Holdings
+GROUP BY PortfolioID, SecurityID, Month
+HAVING COUNT(*) > 0;
+
+--Check largest and smallest values in the Holdings table for each column
+SELECT MIN(MarketValueINR) AS MinMarketValueINR, MAX(MarketValueINR) AS MaxMarketValueINR,
+       MIN(CostINR) AS MinCostINR, MAX(CostINR) AS MaxCostINR,
+       MIN(Month) AS MinMonth, MAX(Month) AS MaxMonth
+FROM Holdings;
+
+--Check market value and no of rows for each month in the Holdings table
+SELECT Month, COUNT(*) AS countrows, SUM(MarketValueINR) AS TotalMarketValueINR
+FROM Holdings
+GROUP BY Month
+ORDER BY Month;
+
+--row count in securities in Benchmarks table, portfolio table and securities table
+SELECT 'Benchmarks' AS TableName, COUNT(*) AS TotalRows
+FROM dbo.Benchmarks
+UNION ALL
+SELECT 'Portfolios' AS TableName, COUNT(*) AS TotalRows
+FROM dbo.Portfolios
+UNION ALL   
+SELECT 'Securities' AS TableName, COUNT(*) AS TotalRows
+FROM dbo.Securities;    
+
+--Check for distinct values in the benchmarks table, portfolios table and securities table
+SELECT 'Benchmarks' AS TableName, COUNT(DISTINCT RiskProfile) AS DistinctValues
+FROM dbo.Benchmarks
+UNION ALL
+SELECT 'Portfolios' AS TableName, COUNT(DISTINCT PortfolioID) AS DistinctValues
+FROM dbo.Portfolios
+UNION ALL  
+SELECT 'Securities' AS TableName, COUNT(DISTINCT SecurityID) AS DistinctValues
+FROM dbo.Securities
+UNION ALL
+SELECT 'AssetClass' AS TableName, COUNT(DISTINCT AssetClass) AS DistinctValues
+FROM dbo.Securities
+UNION ALL
+SELECT 'Sector' AS TableName, COUNT(DISTINCT Sector) AS DistinctValues
+FROM dbo.Securities
+UNION ALL
+SELECT 'Currency' AS TableName, COUNT(DISTINCT Currency) AS DistinctValues
+FROM dbo.Securities;
+

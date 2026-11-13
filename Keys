@@ -1,0 +1,73 @@
+--portfolioid 1 to many-Holdings-many to 1-securityid. Benchmark csv to compare portfolio return and risk with benchmarks
+--benchmarks can't get foreign key. We can use join on riskprofile+month
+USE P07_ArthSutra
+GO
+
+--check for missing portfolioid and securityid in the holdings table
+SELECT COUNT(*) AS MissingPortfolio
+FROM Holdings AS h RIGHT JOIN Portfolios AS p ON h.PortfolioID = p.PortfolioID
+WHERE p.PortfolioID IS NULL;
+
+SELECT COUNT(*) AS MissingSecurity
+FROM Holdings AS h Right Join dbo.Securities AS s ON h.SecurityID = s.SecurityID
+WHERE s.SecurityID IS NULL;
+
+-- 1. Orphan checks: holdings pointing to a missing master (must be 0)
+SELECT COUNT(*) AS MissingPortfolio
+FROM Holdings h LEFT JOIN Portfolios p ON h.PortfolioID = p.PortfolioID
+WHERE p.PortfolioID IS NULL;
+
+SELECT COUNT(*) AS MissingSecurity
+FROM Holdings h LEFT JOIN Securities s ON h.SecurityID = s.SecurityID
+WHERE s.SecurityID IS NULL;
+
+--  Duplicate check: must return no rows, or the PK will fail
+SELECT PortfolioID, SecurityID, Month, COUNT(*)
+FROM Holdings GROUP BY PortfolioID, SecurityID, Month HAVING COUNT(*) > 1;
+
+
+--making sure that primary key columns are not null
+--Portfolios
+ALTER TABLE Portfolios ALTER COLUMN PortfolioID         NVARCHAR(10)  NOT NULL;
+ALTER TABLE Portfolios ALTER COLUMN RiskProfile         NVARCHAR(20)  NOT NULL;
+ALTER TABLE Portfolios ALTER COLUMN MaxSingleHoldingPct tinyint       NOT NULL;
+ALTER TABLE Portfolios ALTER COLUMN EquityLimitPct      tinyint      NOT NULL;
+
+-- Securities
+ALTER TABLE Securities ALTER COLUMN SecurityID NVARCHAR(10) NOT NULL;
+ALTER TABLE Securities ALTER COLUMN AssetClass NVARCHAR(10) NOT NULL;
+ALTER TABLE Securities ALTER COLUMN Sector     NVARCHAR(20) NOT NULL;
+ALTER TABLE Securities ALTER COLUMN Currency   NVARCHAR(5)  NOT NULL;
+
+-- Holdings
+ALTER TABLE Holdings ALTER COLUMN Month          date          NOT NULL;
+ALTER TABLE Holdings ALTER COLUMN PortfolioID    NVARCHAR(10)   NOT NULL;
+ALTER TABLE Holdings ALTER COLUMN SecurityID     NVARCHAR(10)   NOT NULL;
+ALTER TABLE Holdings ALTER COLUMN MarketValueINR float         NOT NULL;
+ALTER TABLE Holdings ALTER COLUMN CostINR        float         NOT NULL;
+
+-- Benchmarks
+ALTER TABLE Benchmarks ALTER COLUMN Month              date         NOT NULL;
+ALTER TABLE Benchmarks ALTER COLUMN RiskProfile        NVARCHAR(20)  NOT NULL;
+ALTER TABLE Benchmarks ALTER COLUMN BenchmarkReturnPct float        NOT NULL;
+
+--Check for distinct values in the portfolios table and securities table
+SELECT DISTINCT RiskProfile FROM Portfolios;                                             -- expect 3 values
+SELECT DISTINCT AssetClass  FROM Securities;
+  
+
+--Set primary keys for the tables
+ALTER TABLE Portfolios ADD CONSTRAINT PK_Portfolios PRIMARY KEY (PortfolioID);
+ALTER TABLE Securities ADD CONSTRAINT PK_Securities PRIMARY KEY (SecurityID);
+ALTER TABLE Holdings ADD CONSTRAINT PK_Holdings PRIMARY KEY (PortfolioID, SecurityID,
+Month);
+ALTER TABLE Benchmarks ADD CONSTRAINT PK_Benchmarks PRIMARY KEY (Month, RiskProfile);
+
+--Adding foreign key constraints to the tables
+ALTER TABLE Holdings ADD CONSTRAINT FK_Holdings_Portfolios FOREIGN KEY (PortfolioID) REFERENCES Portfolios(PortfolioID);
+ALTER TABLE Holdings ADD CONSTRAINT FK_Holdings_Securities FOREIGN KEY (SecurityID) REFERENCES Securities(SecurityID);
+
+--record of primary keys in the database
+SELECT TABLE_NAME, CONSTRAINT_NAME, CONSTRAINT_TYPE
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+ORDER BY TABLE_NAME, CONSTRAINT_TYPE;
