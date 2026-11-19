@@ -1,0 +1,63 @@
+USE P07_ArthSutra
+GO
+
+--we want one row per portfolio per month. Like remove those 5 rows per month per portfolio
+--things we can do: find total value, return, benchmark comparison, equity %, largest holding %, and breach flags.
+--return here is not calculated as final-initial/initial but it's just mktholding-cost
+
+
+--finding largest return percentage
+Select PortfolioID, Month, SUM(MarketValueINR) AS TotalMV, 
+        SUM(CostINR) AS TotalCost,
+        100.0 * (SUM(MarketValueINR) - SUM(CostINR)) / SUM(CostINR) AS ReturnPct
+From vw_HoldingWeights
+Group By PortfolioID, Month
+Order By ReturnPct DESC;
+
+--equity % and largest holding %
+Select PortfolioID, Month,
+         SUM(CASE WHEN AssetClass = 'Equity' THEN WeightPct ELSE 0 END) As EquityPct,
+         Max(WeightPct) AS LargestHoldingPct
+From vw_HoldingWeights
+Group By PortfolioID, Month
+Order By EquityPct DESC;    
+
+Select PortfolioID, Month, SecurityID, AssetClass, WeightPct
+From vw_HoldingWeights
+Where PortfolioID = 'P060' AND Month = '2024-10-01'; --P060 has 100% equity
+
+--create a view to get the breach flags for each portfolio per month
+Go
+Create or Alter View vw_PortfolioMonth AS
+Select w.PortfolioID, w.Month, w.RiskProfile, w.EquityLimitPct, w.MaxSingleHoldingPct,
+    SUM(w.MarketValueINR) AS TotalMV,
+    SUM(w.CostINR)        AS TotalCost,
+    100*(Sum(w.MarketValueINR) - Sum(w.CostINR))/Sum(w.CostINR) AS ReturnPct,
+    b.BenchmarkReturnPct,
+    100.0 * (SUM(w.MarketValueINR) - SUM(w.CostINR)) / SUM(w.CostINR)
+    - b.BenchmarkReturnPct  AS ExcessReturnPct,
+    SUM(CASE WHEN w.AssetClass = 'Equity' THEN w.WeightPct ELSE 0 END) AS EquityPct,
+    MAX(w.WeightPct) AS MaxHoldingPct,
+    SUM(CASE WHEN w.WeightPct > w.MaxSingleHoldingPct THEN 1 ELSE 0 END) AS HoldingsOverCap,
+    CASE WHEN MAX(w.WeightPct) > w.MaxSingleHoldingPct THEN 1 ELSE 0 END AS SingleBreach,
+    CASE WHEN SUM(CASE WHEN w.AssetClass = 'Equity' THEN w.WeightPct ELSE 0 END)
+         > w.EquityLimitPct THEN 1 ELSE 0 END                     AS EquityBreach
+FROM vw_HoldingWeights AS w
+JOIN Benchmarks AS b
+ON b.RiskProfile = w.RiskProfile
+AND b.Month       = w.Month
+GROUP BY w.PortfolioID, w.Month, w.RiskProfile, w.MaxSingleHoldingPct,
+     w.EquityLimitPct, b.BenchmarkReturnPct;
+GO
+
+Select * from vw_PortfolioMonth;
+
+--open view
+
+--check latest breaches
+Select PortfolioID, SUM(SingleBreach) AS SingleBreaches, SUM(EquityBreach) AS EquityBreaches
+FROM vw_PortfolioMonth WHERE Month = '2026-03-01'
+Group by PortfolioID;
+
+Select SUM(SingleBreach) AS SingleBreaches, SUM(EquityBreach) AS EquityBreaches
+FROM vw_PortfolioMonth WHERE Month = '2026-03-01'
