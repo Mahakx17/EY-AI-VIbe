@@ -1,0 +1,86 @@
+USE P07_ArthSutra
+GO
+
+--Load the Python output tables back into SQL Server (brief: "write output back to SQL").
+--Power BI then reads Q10 priorities and Q9 risk scores from SQL, not from the notebook.
+--Paths are for SQL Server on Mac (Docker): copy the CSVs into /var/opt/mssql/data/ first. On Windows use a path like C:\EY\outputs\.
+--FORMAT = 'CSV' needs SQL Server 2017 or later. Older versions: use Import Flat File instead.
+
+--1. Rebalancing priority list (Q10), one row per portfolio
+DROP TABLE IF EXISTS dbo.py_rebalancing_priority;
+CREATE TABLE dbo.py_rebalancing_priority (
+    PortfolioID         NVARCHAR(10)  NOT NULL PRIMARY KEY,
+    RiskProfile         NVARCHAR(20)  NOT NULL,
+    EquityLimitPct      tinyint       NOT NULL,
+    MaxSingleHoldingPct tinyint       NOT NULL,
+    EquityPct           float         NOT NULL,
+    EquityExcessPct     float         NOT NULL,
+    MaxHoldingPct       float         NOT NULL,
+    EquityBreach        int           NOT NULL,
+    MaterialConc        int           NOT NULL,
+    TotalMV             float         NOT NULL,
+    RiskScore           float         NOT NULL,
+    Band                NVARCHAR(10)  NOT NULL,
+    EquityBreachMonths  int           NOT NULL,
+    AllocationStatus    NVARCHAR(20)  NOT NULL,
+    Q3Flag              NVARCHAR(40)  NOT NULL,
+    ConcTrimINR         float         NULL,
+    EquityReduceINR     float         NULL,
+    IndicativeTradeINR  float         NULL,
+    Priority            NVARCHAR(40)  NOT NULL,
+    Action              NVARCHAR(100) NOT NULL,
+    CONSTRAINT FK_py_priority_Portfolios FOREIGN KEY (PortfolioID) REFERENCES Portfolios(PortfolioID)
+);
+
+BULK INSERT dbo.py_rebalancing_priority
+FROM '/var/opt/mssql/data/py_rebalancing_priority.csv'
+WITH (FORMAT = 'CSV', FIRSTROW = 2, FIELDQUOTE = '"');
+
+--2. Risk score with its six components (Q9), one row per portfolio
+DROP TABLE IF EXISTS dbo.py_portfolio_risk_score;
+CREATE TABLE dbo.py_portfolio_risk_score (
+    PortfolioID   NVARCHAR(10) NOT NULL PRIMARY KEY,
+    RiskProfile   NVARCHAR(20) NOT NULL,
+    RiskScore     float        NOT NULL,
+    Band          NVARCHAR(10) NOT NULL,
+    Persistence   float        NOT NULL,
+    EquityExcess  float        NOT NULL,
+    Concentration float        NOT NULL,
+    Volatility    float        NOT NULL,
+    Drawdown      float        NOT NULL,
+    Currency      float        NOT NULL,
+    CONSTRAINT FK_py_score_Portfolios FOREIGN KEY (PortfolioID) REFERENCES Portfolios(PortfolioID)
+);
+
+BULK INSERT dbo.py_portfolio_risk_score
+FROM '/var/opt/mssql/data/py_portfolio_risk_score.csv'
+WITH (FORMAT = 'CSV', FIRSTROW = 2, FIELDQUOTE = '"');
+
+--3. Control checks: must return 100 rows each, and the latest-month AUM must match SQL (187,804,780)
+SELECT 'py_rebalancing_priority' AS TableName, COUNT(*) AS Rows_, SUM(TotalMV) AS TotalMV
+FROM dbo.py_rebalancing_priority
+UNION ALL
+SELECT 'vw_PortfolioMonth, Mar 2026', COUNT(*), SUM(TotalMV)
+FROM vw_PortfolioMonth
+WHERE Month = '2026-03-01';
+
+SELECT COUNT(*) AS Rows_ FROM dbo.py_portfolio_risk_score;
+
+--4. Q10 summary that Power BI should show: priority by risk profile with indicative trades
+--Expected: P1 4 (all Conservative), P2 19, P3 43, P4 34; P1 + P2 trades about INR 1.18 crore
+SELECT RiskProfile, Priority,
+       COUNT(*)                                AS Portfolios,
+       ROUND(SUM(IndicativeTradeINR) / 1e7, 2) AS IndicativeTradeINRcrore
+FROM dbo.py_rebalancing_priority
+GROUP BY RiskProfile, Priority
+ORDER BY Priority, RiskProfile;
+
+--5. Why 26 equity breaches become 23 reviews: 18 of the 26 are P1 or P2,
+--8 are temporary breaches with a Low score (P3 watchlist), and 5 P2 portfolios are concentration-only
+SELECT Priority,
+       SUM(EquityBreach)                                                  AS InEquityBreachNow,
+       SUM(CASE WHEN EquityBreach = 0 AND MaterialConc = 1 THEN 1 ELSE 0 END) AS ConcentrationOnly,
+       COUNT(*)                                                           AS Portfolios
+FROM dbo.py_rebalancing_priority
+GROUP BY Priority
+ORDER BY Priority;
